@@ -13,13 +13,63 @@ load_dotenv()
 
 genai_client = genai.Client()
 
-bot = commands.Bot(command_prefix='!', intents=discord.Intents.default())
+intents = discord.Intents.default()
+intents.message_content = True
+bot = commands.Bot(command_prefix='!', intents=intents)
 user_models = {}
 
 @bot.event
 async def on_ready():
     print("Bot ready!", flush=True)
     await bot.tree.sync()
+
+@bot.command(name='llm')
+async def llm_prefix_cmd(ctx, *, prompt: str):
+    async with ctx.typing():
+        model = user_models.get(ctx.author.id, {}).get('llm')
+        full_prompt = prompt
+
+        if ctx.message.reference:
+            replied_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+            full_prompt = f"Context: {replied_msg.content}\n\n{prompt}"
+
+        response = llm(full_prompt, model=model)
+        await ctx.reply(f"> {prompt}\n\n{response}")
+
+@bot.command(name='i2i')
+async def i2i_cmd(ctx, *, prompt: str):
+    async with ctx.typing():
+        image_url = None
+        if ctx.message.reference:
+            replied_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+            if replied_msg.attachments:
+                image_url = replied_msg.attachments[0].url
+        elif ctx.message.attachments:
+            image_url = ctx.message.attachments[0].url
+
+        if not image_url:
+            await ctx.reply("Reply to a message with an image or attach one")
+            return
+
+        import aiohttp
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url) as resp:
+                image_data = await resp.read()
+
+        input_image = Image.open(BytesIO(image_data))
+        response = genai_client.models.generate_content(
+            model="gemini-2.5-flash-image",
+            contents=[prompt, input_image]
+        )
+
+        for part in response.candidates[0].content.parts:
+            if part.inline_data is not None:
+                image = Image.open(BytesIO(part.inline_data.data))
+                image_bytes = BytesIO()
+                image.save(image_bytes, format='PNG')
+                image_bytes.seek(0)
+                await ctx.reply(f"> {prompt}", file=discord.File(image_bytes, filename='i2i.png'))
+                return
 
 @bot.tree.command(name="llm", description="Ask the LLM")
 async def llm_cmd(interaction: discord.Interaction, prompt: str):
