@@ -1,0 +1,4 @@
+discord.py
+anthropic
+openai
+python-dotenv

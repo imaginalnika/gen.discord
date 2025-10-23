@@ -1,0 +1,9 @@
+.env
+*~
+*un
+*#
+.venv
+*.swp
+__pycache__
+CLAUDE.md
+characters.discord
