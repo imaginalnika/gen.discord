@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 import os
 import json
+import asyncio
 from dotenv import load_dotenv
 from llm import llm, REGULAR_MODELS, STRUCTURED_MODELS
 from google import genai
@@ -71,6 +72,57 @@ async def i2i_cmd(ctx, *, prompt: str):
                 await ctx.reply(f"> {prompt}", file=discord.File(image_bytes, filename='i2i.png'))
                 return
 
+@bot.command(name='nukki')
+async def nukki_cmd(ctx):
+    async with ctx.typing():
+        image_url = None
+        if ctx.message.reference:
+            replied_msg = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+            if replied_msg.attachments:
+                image_url = replied_msg.attachments[0].url
+        elif ctx.message.attachments:
+            image_url = ctx.message.attachments[0].url
+
+        if not image_url:
+            await ctx.reply("Reply to a message with an image or attach one")
+            return
+
+        import aiohttp
+        from rembg import remove
+        async with aiohttp.ClientSession() as session:
+            async with session.get(image_url) as resp:
+                image_data = await resp.read()
+
+        input_image = Image.open(BytesIO(image_data))
+        output_image = remove(input_image)
+
+        image_bytes = BytesIO()
+        output_image.save(image_bytes, format='PNG')
+        image_bytes.seek(0)
+        await ctx.reply(file=discord.File(image_bytes, filename='nukki.png'))
+
+@bot.command(name='enhance')
+async def enhance_cmd(ctx, *, prompt: str):
+    async with ctx.typing():
+        import subprocess
+        script_dir = os.path.join(os.path.dirname(__file__), 'scripts')
+        llm_script = os.path.join(script_dir, 'llm.sh')
+
+        enhance_prompt = f"Convert this prompt into a detailed English image generation prompt. Prefix it with 'digital anime illustration of'. Be concise and focused on visual details only. Do not include any explanations, just output the enhanced prompt:\n\n{prompt}"
+
+        proc = await asyncio.create_subprocess_exec(
+            'bash', llm_script, enhance_prompt,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await proc.communicate()
+
+        if proc.returncode == 0 and stdout:
+            enhanced = stdout.decode().strip()
+            await ctx.reply(f"> {prompt}\n\n**Enhanced:**\n{enhanced}")
+        else:
+            await ctx.reply("Enhancement failed")
+
 @bot.tree.command(name="llm", description="Ask the LLM")
 async def llm_cmd(interaction: discord.Interaction, prompt: str):
     await interaction.response.defer()
@@ -135,24 +187,178 @@ async def character_and_image_gen_cmd(interaction: discord.Interaction, prompt: 
                 await interaction.followup.send(file=discord.File(image_bytes, filename='character.png'))
                 return
 
-@bot.tree.command(name="image-gen", description="Generate an image")
-async def image_gen_cmd(interaction: discord.Interaction, prompt: str):
+@bot.tree.command(name="qwen-wan", description="LoRA 이미지 생성")
+@discord.app_commands.choices(aspect=[
+    discord.app_commands.Choice(name="Portrait", value="portrait"),
+    discord.app_commands.Choice(name="Landscape", value="landscape"),
+    discord.app_commands.Choice(name="Square", value="square")
+])
+async def qwen_wan_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None, lora_strength: float = None):
     await interaction.response.defer()
-    response = genai_client.models.generate_content(
-        model="gemini-2.5-flash-image",
-        contents=[prompt]
+
+    import subprocess
+    script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'qwen_wan.sh')
+    output_path = os.path.join(os.path.dirname(__file__), 'scripts', 'QWEN_WAN.png')
+
+    # Build command with flags (no enhancement by default)
+    args = [script_path]
+    if aspect:
+        args.extend(['-a', aspect])
+    if lora_strength is not None:
+        args.extend(['-s', str(lora_strength)])
+    args.append(prompt)
+
+    # Run the shell script
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        cwd=os.path.dirname(script_path),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
     )
-    for part in response.candidates[0].content.parts:
-        if part.inline_data is not None:
-            image = Image.open(BytesIO(part.inline_data.data))
-            image_bytes = BytesIO()
-            image.save(image_bytes, format='PNG')
-            image_bytes.seek(0)
-            await interaction.followup.send(
-                f"> {prompt}",
-                file=discord.File(image_bytes, filename='generated.png')
-            )
-            return
+    stdout, stderr = await proc.communicate()
+
+    # Log script output
+    if stdout:
+        print(f"[qwen-wan] stdout: {stdout.decode()}", flush=True)
+    if stderr:
+        print(f"[qwen-wan] stderr: {stderr.decode()}", flush=True)
+
+    # Read the generated image
+    with open(output_path, 'rb') as f:
+        image_bytes = BytesIO(f.read())
+
+    await interaction.followup.send(
+        f"> {prompt}",
+        file=discord.File(image_bytes, filename='generated.png')
+    )
+
+@bot.tree.command(name="enhanced-qwen-wan", description="LoRA 이미지 생성 (prompt enhance)")
+@discord.app_commands.choices(aspect=[
+    discord.app_commands.Choice(name="Portrait", value="portrait"),
+    discord.app_commands.Choice(name="Landscape", value="landscape"),
+    discord.app_commands.Choice(name="Square", value="square")
+])
+async def enhanced_qwen_wan_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None, lora_strength: float = None):
+    await interaction.response.defer()
+
+    import subprocess
+    script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'qwen_wan.sh')
+    output_path = os.path.join(os.path.dirname(__file__), 'scripts', 'QWEN_WAN.png')
+
+    # Build command with flags (enable enhancement with -e)
+    args = [script_path]
+    if aspect:
+        args.extend(['-a', aspect])
+    if lora_strength is not None:
+        args.extend(['-s', str(lora_strength)])
+    args.append('-e')  # Enable enhancement
+    args.append(prompt)
+
+    # Run the shell script
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        cwd=os.path.dirname(script_path),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+
+    # Log script output
+    if stdout:
+        print(f"[enhanced-qwen-wan] stdout: {stdout.decode()}", flush=True)
+    if stderr:
+        print(f"[enhanced-qwen-wan] stderr: {stderr.decode()}", flush=True)
+
+    # Extract enhanced prompt from stdout
+    enhanced_prompt = prompt
+    stdout_text = stdout.decode() if stdout else ""
+    for line in stdout_text.split('\n'):
+        if line.startswith('Enhanced: '):
+            enhanced_prompt = line[10:]  # Remove "Enhanced: " prefix
+            break
+
+    # Read the generated image
+    with open(output_path, 'rb') as f:
+        image_bytes = BytesIO(f.read())
+
+    await interaction.followup.send(
+        f"> {prompt}\n\n**Enhanced:** {enhanced_prompt}",
+        file=discord.File(image_bytes, filename='generated.png')
+    )
+
+@bot.tree.command(name="nukki-enhanced-qwen-wan", description="LoRA 이미지 생성 (prompt enhance + background removal)")
+@discord.app_commands.choices(aspect=[
+    discord.app_commands.Choice(name="Portrait", value="portrait"),
+    discord.app_commands.Choice(name="Landscape", value="landscape"),
+    discord.app_commands.Choice(name="Square", value="square")
+])
+async def nukki_enhanced_qwen_wan_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None, lora_strength: float = None):
+    await interaction.response.defer()
+
+    import subprocess
+    script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'qwen_wan.sh')
+    output_path = os.path.join(os.path.dirname(__file__), 'scripts', 'QWEN_WAN.png')
+    nukki_script = os.path.join(os.path.dirname(__file__), 'scripts', 'nukki.py')
+    nukki_output = os.path.join(os.path.dirname(__file__), 'scripts', 'QWEN_WAN_nukki.png')
+
+    # Append "no background" to prompt for enhancement
+    enhanced_prompt_input = f"{prompt}, no background"
+
+    # Build command with flags (enable enhancement with -e)
+    args = [script_path]
+    if aspect:
+        args.extend(['-a', aspect])
+    if lora_strength is not None:
+        args.extend(['-s', str(lora_strength)])
+    args.append('-e')  # Enable enhancement
+    args.append(enhanced_prompt_input)
+
+    # Run the image generation script
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        cwd=os.path.dirname(script_path),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+
+    # Log script output
+    if stdout:
+        print(f"[nukki-enhanced-qwen-wan] qwen_wan stdout: {stdout.decode()}", flush=True)
+    if stderr:
+        print(f"[nukki-enhanced-qwen-wan] qwen_wan stderr: {stderr.decode()}", flush=True)
+
+    # Extract enhanced prompt from stdout
+    enhanced_prompt = enhanced_prompt_input
+    stdout_text = stdout.decode() if stdout else ""
+    for line in stdout_text.split('\n'):
+        if line.startswith('Enhanced: '):
+            enhanced_prompt = line[10:]  # Remove "Enhanced: " prefix
+            break
+
+    # Run nukki background removal
+    python_path = os.path.join(os.path.dirname(__file__), '.venv', 'bin', 'python')
+    nukki_proc = await asyncio.create_subprocess_exec(
+        python_path, nukki_script, output_path,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    nukki_stdout, nukki_stderr = await nukki_proc.communicate()
+
+    # Log nukki output
+    if nukki_stdout:
+        print(f"[nukki-enhanced-qwen-wan] nukki stdout: {nukki_stdout.decode()}", flush=True)
+    if nukki_stderr:
+        print(f"[nukki-enhanced-qwen-wan] nukki stderr: {nukki_stderr.decode()}", flush=True)
+
+    # Read the nukki'd image
+    with open(nukki_output, 'rb') as f:
+        image_bytes = BytesIO(f.read())
+
+    await interaction.followup.send(
+        f"> {prompt}\n\n**Enhanced:** {enhanced_prompt}",
+        file=discord.File(image_bytes, filename='generated_nukki.png')
+    )
 
 @bot.tree.command(name="setmodel-llm", description="Set your LLM model")
 @discord.app_commands.choices(model=[discord.app_commands.Choice(name=m, value=m) for m in REGULAR_MODELS])
@@ -175,5 +381,14 @@ async def models_cmd(interaction: discord.Interaction):
     regular = ", ".join(REGULAR_MODELS)
     structured = ", ".join(STRUCTURED_MODELS)
     await interaction.response.send_message(f"**Regular:** {regular}\n**Structured:** {structured}")
+
+@bot.tree.command(name="list-commands", description="List all prefix commands")
+async def list_commands_cmd(interaction: discord.Interaction):
+    commands_list = """**Prefix Commands (!):**
+• `!llm <prompt>` - Ask LLM (supports reply context)
+• `!i2i <prompt>` - Transform image (reply to or attach image)
+• `!nukki` - Remove background (reply to or attach image)
+• `!enhance <prompt>` - Enhance prompt for image generation"""
+    await interaction.response.send_message(commands_list)
 
 bot.run(os.getenv('DISCORD_BOT_TOKEN'))

@@ -7,3 +7,5 @@
 __pycache__
 CLAUDE.md
 characters.discord
+*.png
+scripts/*.json
