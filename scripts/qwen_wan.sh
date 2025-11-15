@@ -89,7 +89,7 @@ RESPONSE=$(jq --arg p "$PROMPT" \
               --argjson h "$HEIGHT" \
               --argjson s "$LORA_STRENGTH" \
               '.["434"].inputs.text1 = $p | .["129"].inputs.width = $w | .["129"].inputs.height = $h | .["135"].inputs.lora_2.strength = $s' \
-              QWEN_WAN.json | jq -n --slurpfile w /dev/stdin '{prompt: $w[0]}' | curl -s -X POST -H "Content-Type: application/json" -d @- https://wktd28ejiizsa2-3000.proxy.runpod.net/prompt)
+              QWEN_WAN_API.json | jq -n --slurpfile w /dev/stdin '{prompt: $w[0]}' | curl -s -X POST -H "Content-Type: application/json" -d @- https://wktd28ejiizsa2-3000.proxy.runpod.net/prompt)
 
 PROMPT_ID=$(echo $RESPONSE | jq -r '.prompt_id')
 echo "Queued: $PROMPT_ID"

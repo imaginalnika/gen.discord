@@ -1,3 +1,5 @@
+google-genai
+pillow
 discord.py
 anthropic
 openai
