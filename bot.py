@@ -369,10 +369,11 @@ async def nukki_enhanced_qwen_wan_cmd(interaction: discord.Interaction, prompt: 
     discord.app_commands.Choice(name="Landscape", value="landscape"),
     discord.app_commands.Choice(name="Square", value="square")
 ])
-async def cathy_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None):
+async def cathy_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None, number: int = 1):
     await interaction.response.defer()
 
     import subprocess
+    import glob
     script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'qwen_wan.sh')
     output_path = os.path.join(os.path.dirname(__file__), 'scripts', 'cathy.png')
 
@@ -380,6 +381,8 @@ async def cathy_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: s
     args = [script_path, '-w', 'cathy.json', '-o', output_path]
     if aspect:
         args.extend(['-a', aspect])
+    if number > 1:
+        args.extend(['-n', str(number)])
     args.append(prompt)
 
     # Run the shell script
@@ -397,13 +400,26 @@ async def cathy_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: s
     if stderr:
         print(f"[cathy-gen] stderr: {stderr.decode()}", flush=True)
 
-    # Read the generated image
-    with open(output_path, 'rb') as f:
-        image_bytes = BytesIO(f.read())
+    # Collect all generated images
+    script_dir = os.path.dirname(script_path)
+    files = []
+
+    if number == 1:
+        files.append(output_path)
+    else:
+        # Multiple images: cathy_001.png, cathy_002.png, etc.
+        pattern = os.path.join(script_dir, 'cathy_*.png')
+        files = sorted(glob.glob(pattern))
+
+    # Send all images
+    discord_files = []
+    for i, fpath in enumerate(files):
+        with open(fpath, 'rb') as f:
+            discord_files.append(discord.File(BytesIO(f.read()), filename=f'cathy_{i+1:03d}.png'))
 
     await interaction.followup.send(
         f"> {prompt}",
-        file=discord.File(image_bytes, filename='cathy.png')
+        files=discord_files
     )
 
 @bot.tree.command(name="chouloky-gen", description="Chouloky workflow 이미지 생성")
@@ -412,11 +428,12 @@ async def cathy_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: s
     discord.app_commands.Choice(name="Landscape", value="landscape"),
     discord.app_commands.Choice(name="Square", value="square")
 ])
-async def chouloky_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None):
-    logger.info(f"chouloky-gen: {interaction.user.name} started generation")
+async def chouloky_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None, number: int = 1):
+    logger.info(f"chouloky-gen: {interaction.user.name} started generation (n={number})")
     await interaction.response.defer()
 
     import subprocess
+    import glob
     script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'qwen_wan.sh')
     output_path = os.path.join(os.path.dirname(__file__), 'scripts', 'chouloky.png')
 
@@ -425,6 +442,8 @@ async def chouloky_gen_cmd(interaction: discord.Interaction, prompt: str, aspect
     if aspect:
         args.extend(['-a', aspect])
         logger.info(f"chouloky-gen: aspect={aspect}")
+    if number > 1:
+        args.extend(['-n', str(number)])
     args.append(prompt)
 
     # Run the shell script
@@ -442,13 +461,26 @@ async def chouloky_gen_cmd(interaction: discord.Interaction, prompt: str, aspect
     if stderr:
         logger.warning(f"chouloky-gen: {stderr.decode().strip()}")
 
-    # Read the generated image
-    with open(output_path, 'rb') as f:
-        image_bytes = BytesIO(f.read())
+    # Collect all generated images
+    script_dir = os.path.dirname(script_path)
+    files = []
+
+    if number == 1:
+        files.append(output_path)
+    else:
+        # Multiple images: chouloky_001.png, chouloky_002.png, etc.
+        pattern = os.path.join(script_dir, 'chouloky_*.png')
+        files = sorted(glob.glob(pattern))
+
+    # Send all images
+    discord_files = []
+    for i, fpath in enumerate(files):
+        with open(fpath, 'rb') as f:
+            discord_files.append(discord.File(BytesIO(f.read()), filename=f'chouloky_{i+1:03d}.png'))
 
     await interaction.followup.send(
         f"> {prompt}",
-        file=discord.File(image_bytes, filename='chouloky.png')
+        files=discord_files
     )
 
     logger.info(f"chouloky-gen: completed for {interaction.user.name}")

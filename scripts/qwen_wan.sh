@@ -6,6 +6,7 @@ LORA_STRENGTH="0.8"
 ENHANCE=false
 WORKFLOW_JSON=""
 OUTPUT_FILE=""
+NUM_IMAGES=1
 
 # Parse flags
 while [[ $# -gt 0 ]]; do
@@ -30,6 +31,10 @@ while [[ $# -gt 0 ]]; do
       OUTPUT_FILE="$2"
       shift 2
       ;;
+    -n|--number)
+      NUM_IMAGES="$2"
+      shift 2
+      ;;
     *)
       PROMPT="$1"
       shift
@@ -38,12 +43,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$PROMPT" ]; then
-  echo "Usage: $0 [-a aspect] [-s strength] [-e] [-w workflow.json] [-o output.png] 'prompt'"
+  echo "Usage: $0 [-a aspect] [-s strength] [-e] [-w workflow.json] [-o output.png] [-n number] 'prompt'"
   echo "  -a, --aspect: portrait (960x1920), landscape (1920x960), square (1280x1280) [default: portrait]"
   echo "  -s, --strength: 0.0-1.0 [default: 0.8]"
   echo "  -e, --enhance: enable prompt enhancement [default: disabled]"
   echo "  -w, --workflow: workflow JSON file [default: interactive selection]"
   echo "  -o, --output: output filename [default: {workflow_name}.png]"
+  echo "  -n, --number: number of images to generate [default: 1]"
   exit 1
 fi
 
@@ -127,12 +133,21 @@ case $ASPECT in
     ;;
 esac
 
+# Generate random seeds
+SEED1=$(( ( RANDOM << 30 | RANDOM << 15 | RANDOM ) ))
+SEED2=$(( ( RANDOM << 30 | RANDOM << 15 | RANDOM ) ))
+
+echo "Using seeds: $SEED1, $SEED2"
+
 # Queue the prompt with custom parameters
 RESPONSE=$(jq --arg p "$PROMPT" \
               --argjson w "$WIDTH" \
               --argjson h "$HEIGHT" \
               --argjson s "$LORA_STRENGTH" \
-              '.["434"].inputs.text1 = $p | .["129"].inputs.width = $w | .["129"].inputs.height = $h | .["135"].inputs.lora_2.strength = $s' \
+              --argjson seed1 "$SEED1" \
+              --argjson seed2 "$SEED2" \
+              --argjson batch "$NUM_IMAGES" \
+              '.["434"].inputs.text1 = $p | .["129"].inputs.width = $w | .["129"].inputs.height = $h | .["129"].inputs.batch_size = $batch | .["135"].inputs.lora_2.strength = $s | .["136"].inputs.seed = $seed1 | .["160"].inputs.seed = $seed2' \
               "$WORKFLOW_JSON" | jq -n --slurpfile w /dev/stdin '{prompt: $w[0]}' | curl -s -X POST -H "Content-Type: application/json" -d @- https://wktd28ejiizsa2-3000.proxy.runpod.net/prompt)
 
 PROMPT_ID=$(echo $RESPONSE | jq -r '.prompt_id')
@@ -144,14 +159,29 @@ while true; do
   
   if echo $STATUS | jq -e '.["'$PROMPT_ID'"].status.completed' > /dev/null 2>&1; then
     echo "Complete!"
-    
-    # Get filename from outputs
-    FILENAME=$(echo $STATUS | jq -r '.["'$PROMPT_ID'"].outputs."157".images[0].filename')
-    SUBFOLDER=$(echo $STATUS | jq -r '.["'$PROMPT_ID'"].outputs."157".images[0].subfolder')
-    
-    # Download
-    curl "https://wktd28ejiizsa2-3000.proxy.runpod.net/view?filename=$FILENAME&subfolder=$SUBFOLDER&type=output" -o "$OUTPUT_FILE"
-    echo "Saved to $OUTPUT_FILE"
+
+    # Get number of images
+    IMAGE_COUNT=$(echo $STATUS | jq -r '.["'$PROMPT_ID'"].outputs."157".images | length')
+
+    # Download each image
+    for i in $(seq 0 $(($IMAGE_COUNT - 1))); do
+      FILENAME=$(echo $STATUS | jq -r '.["'$PROMPT_ID'"].outputs."157".images['$i'].filename')
+      SUBFOLDER=$(echo $STATUS | jq -r '.["'$PROMPT_ID'"].outputs."157".images['$i'].subfolder')
+
+      # Generate output filename
+      if [ $IMAGE_COUNT -eq 1 ]; then
+        OUTPUT="${OUTPUT_FILE}"
+      else
+        # Remove .png extension and add index
+        BASE="${OUTPUT_FILE%.png}"
+        OUTPUT="${BASE}_$(printf '%03d' $((i+1))).png"
+      fi
+
+      # Download
+      curl "https://wktd28ejiizsa2-3000.proxy.runpod.net/view?filename=$FILENAME&subfolder=$SUBFOLDER&type=output" -o "$OUTPUT"
+      echo "Saved to $OUTPUT"
+    done
+
     break
   fi
   
