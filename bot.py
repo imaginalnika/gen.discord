@@ -369,7 +369,7 @@ async def nukki_enhanced_qwen_wan_cmd(interaction: discord.Interaction, prompt: 
     discord.app_commands.Choice(name="Landscape", value="landscape"),
     discord.app_commands.Choice(name="Square", value="square")
 ])
-async def cathy_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None, number: int = 1):
+async def cathy_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None, number: int = 4):
     await interaction.response.defer()
 
     import subprocess
@@ -378,11 +378,9 @@ async def cathy_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: s
     output_path = os.path.join(os.path.dirname(__file__), 'scripts', 'cathy.png')
 
     # Build command with flags
-    args = [script_path, '-w', 'cathy.json', '-o', output_path]
+    args = [script_path, '-w', 'cathy.json', '-o', output_path, '-n', str(number)]
     if aspect:
         args.extend(['-a', aspect])
-    if number > 1:
-        args.extend(['-n', str(number)])
     args.append(prompt)
 
     # Run the shell script
@@ -402,14 +400,14 @@ async def cathy_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: s
 
     # Collect all generated images
     script_dir = os.path.dirname(script_path)
-    files = []
 
-    if number == 1:
-        files.append(output_path)
-    else:
-        # Multiple images: cathy_001.png, cathy_002.png, etc.
-        pattern = os.path.join(script_dir, 'cathy_*.png')
-        files = sorted(glob.glob(pattern))
+    # Check for batch files first
+    pattern = os.path.join(script_dir, 'cathy_*.png')
+    files = sorted(glob.glob(pattern))
+
+    # If no batch files, use single output
+    if not files:
+        files = [output_path]
 
     # Send all images
     discord_files = []
@@ -428,7 +426,7 @@ async def cathy_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: s
     discord.app_commands.Choice(name="Landscape", value="landscape"),
     discord.app_commands.Choice(name="Square", value="square")
 ])
-async def chouloky_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None, number: int = 1):
+async def chouloky_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None, number: int = 4):
     logger.info(f"chouloky-gen: {interaction.user.name} started generation (n={number})")
     await interaction.response.defer()
 
@@ -438,12 +436,10 @@ async def chouloky_gen_cmd(interaction: discord.Interaction, prompt: str, aspect
     output_path = os.path.join(os.path.dirname(__file__), 'scripts', 'chouloky.png')
 
     # Build command with flags
-    args = [script_path, '-w', 'chouloky.json', '-o', output_path]
+    args = [script_path, '-w', 'chouloky.json', '-o', output_path, '-n', str(number)]
     if aspect:
         args.extend(['-a', aspect])
         logger.info(f"chouloky-gen: aspect={aspect}")
-    if number > 1:
-        args.extend(['-n', str(number)])
     args.append(prompt)
 
     # Run the shell script
@@ -463,14 +459,14 @@ async def chouloky_gen_cmd(interaction: discord.Interaction, prompt: str, aspect
 
     # Collect all generated images
     script_dir = os.path.dirname(script_path)
-    files = []
 
-    if number == 1:
-        files.append(output_path)
-    else:
-        # Multiple images: chouloky_001.png, chouloky_002.png, etc.
-        pattern = os.path.join(script_dir, 'chouloky_*.png')
-        files = sorted(glob.glob(pattern))
+    # Check for batch files first
+    pattern = os.path.join(script_dir, 'chouloky_*.png')
+    files = sorted(glob.glob(pattern))
+
+    # If no batch files, use single output
+    if not files:
+        files = [output_path]
 
     # Send all images
     discord_files = []

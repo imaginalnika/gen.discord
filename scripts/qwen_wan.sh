@@ -6,7 +6,7 @@ LORA_STRENGTH="0.8"
 ENHANCE=false
 WORKFLOW_JSON=""
 OUTPUT_FILE=""
-NUM_IMAGES=1
+NUM_IMAGES=4
 
 # Parse flags
 while [[ $# -gt 0 ]]; do
@@ -49,7 +49,7 @@ if [ -z "$PROMPT" ]; then
   echo "  -e, --enhance: enable prompt enhancement [default: disabled]"
   echo "  -w, --workflow: workflow JSON file [default: interactive selection]"
   echo "  -o, --output: output filename [default: {workflow_name}.png]"
-  echo "  -n, --number: number of images to generate [default: 1]"
+  echo "  -n, --number: number of images to generate [default: 4]"
   exit 1
 fi
 
