@@ -3,6 +3,8 @@ from discord.ext import commands
 import os
 import json
 import asyncio
+import shlex
+import logging
 from dotenv import load_dotenv
 from llm import llm, REGULAR_MODELS, STRUCTURED_MODELS
 from google import genai
@@ -13,6 +15,7 @@ load_dotenv(os.path.expanduser('~/.env'))
 load_dotenv()
 
 genai_client = genai.Client()
+logger = logging.getLogger('discord')
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -359,6 +362,96 @@ async def nukki_enhanced_qwen_wan_cmd(interaction: discord.Interaction, prompt: 
         f"> {prompt}\n\n**Enhanced:** {enhanced_prompt}",
         file=discord.File(image_bytes, filename='generated_nukki.png')
     )
+
+@bot.tree.command(name="cathy-gen", description="Cathy workflow 이미지 생성")
+@discord.app_commands.choices(aspect=[
+    discord.app_commands.Choice(name="Portrait", value="portrait"),
+    discord.app_commands.Choice(name="Landscape", value="landscape"),
+    discord.app_commands.Choice(name="Square", value="square")
+])
+async def cathy_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None):
+    await interaction.response.defer()
+
+    import subprocess
+    script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'qwen_wan.sh')
+    output_path = os.path.join(os.path.dirname(__file__), 'scripts', 'cathy.png')
+
+    # Build command with flags
+    args = [script_path, '-w', 'cathy.json', '-o', output_path]
+    if aspect:
+        args.extend(['-a', aspect])
+    args.append(prompt)
+
+    # Run the shell script
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        cwd=os.path.dirname(script_path),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+
+    # Log script output
+    if stdout:
+        print(f"[cathy-gen] stdout: {stdout.decode()}", flush=True)
+    if stderr:
+        print(f"[cathy-gen] stderr: {stderr.decode()}", flush=True)
+
+    # Read the generated image
+    with open(output_path, 'rb') as f:
+        image_bytes = BytesIO(f.read())
+
+    await interaction.followup.send(
+        f"> {prompt}",
+        file=discord.File(image_bytes, filename='cathy.png')
+    )
+
+@bot.tree.command(name="chouloky-gen", description="Chouloky workflow 이미지 생성")
+@discord.app_commands.choices(aspect=[
+    discord.app_commands.Choice(name="Portrait", value="portrait"),
+    discord.app_commands.Choice(name="Landscape", value="landscape"),
+    discord.app_commands.Choice(name="Square", value="square")
+])
+async def chouloky_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None):
+    logger.info(f"chouloky-gen: {interaction.user.name} started generation")
+    await interaction.response.defer()
+
+    import subprocess
+    script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'qwen_wan.sh')
+    output_path = os.path.join(os.path.dirname(__file__), 'scripts', 'chouloky.png')
+
+    # Build command with flags
+    args = [script_path, '-w', 'chouloky.json', '-o', output_path]
+    if aspect:
+        args.extend(['-a', aspect])
+        logger.info(f"chouloky-gen: aspect={aspect}")
+    args.append(prompt)
+
+    # Run the shell script
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        cwd=os.path.dirname(script_path),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE
+    )
+    stdout, stderr = await proc.communicate()
+
+    # Log script output
+    if stdout:
+        logger.info(f"chouloky-gen: {stdout.decode().strip()}")
+    if stderr:
+        logger.warning(f"chouloky-gen: {stderr.decode().strip()}")
+
+    # Read the generated image
+    with open(output_path, 'rb') as f:
+        image_bytes = BytesIO(f.read())
+
+    await interaction.followup.send(
+        f"> {prompt}",
+        file=discord.File(image_bytes, filename='chouloky.png')
+    )
+
+    logger.info(f"chouloky-gen: completed for {interaction.user.name}")
 
 @bot.tree.command(name="setmodel-llm", description="Set your LLM model")
 @discord.app_commands.choices(model=[discord.app_commands.Choice(name=m, value=m) for m in REGULAR_MODELS])
