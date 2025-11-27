@@ -10,12 +10,27 @@ from llm import llm, REGULAR_MODELS, STRUCTURED_MODELS
 from google import genai
 from PIL import Image
 from io import BytesIO
+import aiohttp
+import base64
 
 load_dotenv(os.path.expanduser('~/.env'))
 load_dotenv()
 
 genai_client = genai.Client()
 logger = logging.getLogger('discord')
+
+# MODAL_API_URL = "https://wakgoodai2--qwen-wan-comfyui-api-dev.modal.run/"
+MODAL_API_URL = "https://wakgoodai2--qwen-wan-comfyui-api.modal.run/"
+
+async def generate_images(prompt: str, lora_name: str, batch_size: int = 4):
+    async with aiohttp.ClientSession() as session:
+        async with session.post(MODAL_API_URL, json={
+            "prompt": f"{lora_name}, {prompt}",
+            "lora_name": lora_name,
+            "batch_size": batch_size
+        }) as resp:
+            data = await resp.json()
+            return [base64.b64decode(img) for img in data["images"]]
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -420,66 +435,23 @@ async def cathy_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: s
         files=discord_files
     )
 
-@bot.tree.command(name="chouloky-gen", description="Chouloky workflow 이미지 생성")
-@discord.app_commands.choices(aspect=[
-    discord.app_commands.Choice(name="Portrait", value="portrait"),
-    discord.app_commands.Choice(name="Landscape", value="landscape"),
-    discord.app_commands.Choice(name="Square", value="square")
-])
-async def chouloky_gen_cmd(interaction: discord.Interaction, prompt: str, aspect: str = None, number: int = 4):
-    logger.info(f"chouloky-gen: {interaction.user.name} started generation (n={number})")
-    await interaction.response.defer()
+LORAS = ["businesskim", "chouloky", "ninnin", "secretto", "sirian"]
 
-    import subprocess
-    import glob
-    script_path = os.path.join(os.path.dirname(__file__), 'scripts', 'qwen_wan.sh')
-    output_path = os.path.join(os.path.dirname(__file__), 'scripts', 'chouloky.png')
+def make_gen_command(lora_name: str):
+    async def cmd(interaction: discord.Interaction, prompt: str, number: int = 2):
+        await interaction.response.defer()
+        try:
+            images = await generate_images(prompt, lora_name, number)
+            files = [discord.File(BytesIO(img), filename=f'{lora_name}_{i+1:03d}.png') for i, img in enumerate(images)]
+            await interaction.followup.send(f"> {prompt}", files=files)
+        except Exception as e:
+            logger.error(f"{lora_name}-gen: {e}")
+            await interaction.followup.send(f"❌ {e}")
+    return cmd
 
-    # Build command with flags
-    args = [script_path, '-w', 'chouloky.json', '-o', output_path, '-n', str(number)]
-    if aspect:
-        args.extend(['-a', aspect])
-        logger.info(f"chouloky-gen: aspect={aspect}")
-    args.append(prompt)
-
-    # Run the shell script
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        cwd=os.path.dirname(script_path),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
-    )
-    stdout, stderr = await proc.communicate()
-
-    # Log script output
-    if stdout:
-        logger.info(f"chouloky-gen: {stdout.decode().strip()}")
-    if stderr:
-        logger.warning(f"chouloky-gen: {stderr.decode().strip()}")
-
-    # Collect all generated images
-    script_dir = os.path.dirname(script_path)
-
-    # Check for batch files first
-    pattern = os.path.join(script_dir, 'chouloky_*.png')
-    files = sorted(glob.glob(pattern))
-
-    # If no batch files, use single output
-    if not files:
-        files = [output_path]
-
-    # Send all images
-    discord_files = []
-    for i, fpath in enumerate(files):
-        with open(fpath, 'rb') as f:
-            discord_files.append(discord.File(BytesIO(f.read()), filename=f'chouloky_{i+1:03d}.png'))
-
-    await interaction.followup.send(
-        f"> {prompt}",
-        files=discord_files
-    )
-
-    logger.info(f"chouloky-gen: completed for {interaction.user.name}")
+for lora in LORAS:
+    cmd = make_gen_command(lora)
+    bot.tree.command(name=f"{lora}-gen", description=f"{lora.capitalize()} 이미지 생성")(cmd)
 
 @bot.tree.command(name="setmodel-llm", description="Set your LLM model")
 @discord.app_commands.choices(model=[discord.app_commands.Choice(name=m, value=m) for m in REGULAR_MODELS])

@@ -1,5 +1,8 @@
 #!/bin/zsh
 
+# Load environment variables
+[ -f "$HOME/.env" ] && source "$HOME/.env"
+
 # Defaults
 ASPECT="portrait"
 LORA_STRENGTH="0.8"
@@ -7,6 +10,7 @@ ENHANCE=false
 WORKFLOW_JSON=""
 OUTPUT_FILE=""
 NUM_IMAGES=4
+COMFYUI_URL="${COMFYUI_URL:-https://62jzbahi7pnemf-3000.proxy.runpod.net}"
 
 # Parse flags
 while [[ $# -gt 0 ]]; do
@@ -148,14 +152,14 @@ RESPONSE=$(jq --arg p "$PROMPT" \
               --argjson seed2 "$SEED2" \
               --argjson batch "$NUM_IMAGES" \
               '.["434"].inputs.text1 = $p | .["129"].inputs.width = $w | .["129"].inputs.height = $h | .["129"].inputs.batch_size = $batch | .["135"].inputs.lora_2.strength = $s | .["136"].inputs.seed = $seed1 | .["160"].inputs.seed = $seed2' \
-              "$WORKFLOW_JSON" | jq -n --slurpfile w /dev/stdin '{prompt: $w[0]}' | curl -s -X POST -H "Content-Type: application/json" -d @- https://wktd28ejiizsa2-3000.proxy.runpod.net/prompt)
+              "$WORKFLOW_JSON" | jq -n --slurpfile w /dev/stdin '{prompt: $w[0]}' | curl -s -X POST -H "Content-Type: application/json" -d @- "$COMFYUI_URL/prompt")
 
 PROMPT_ID=$(echo $RESPONSE | jq -r '.prompt_id')
 echo "Queued: $PROMPT_ID"
 
 # Poll until complete
 while true; do
-  STATUS=$(curl -s https://wktd28ejiizsa2-3000.proxy.runpod.net/history/$PROMPT_ID)
+  STATUS=$(curl -s "$COMFYUI_URL/history/$PROMPT_ID")
   
   if echo $STATUS | jq -e '.["'$PROMPT_ID'"].status.completed' > /dev/null 2>&1; then
     echo "Complete!"
@@ -178,7 +182,7 @@ while true; do
       fi
 
       # Download
-      curl "https://wktd28ejiizsa2-3000.proxy.runpod.net/view?filename=$FILENAME&subfolder=$SUBFOLDER&type=output" -o "$OUTPUT"
+      curl "$COMFYUI_URL/view?filename=$FILENAME&subfolder=$SUBFOLDER&type=output" -o "$OUTPUT"
       echo "Saved to $OUTPUT"
     done
 
